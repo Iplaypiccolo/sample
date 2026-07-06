@@ -1,0 +1,6 @@
+{
+  "name": "경마 배팅 게임",
+  "description": "10번의 경마 게임 배팅을 통해 점수를 얻고 순위를 겨루는 흥미진진한 캐주얼 웹게임",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
