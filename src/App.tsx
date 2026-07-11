@@ -12,10 +12,14 @@ import {
   RefreshCw, 
   HelpCircle,
   Clock,
-  History
+  History,
+  Users
 } from "lucide-react";
 import { synth } from "./audioSynth";
 import { generateSingleHtml } from "./exportTemplate";
+import { db, doc, updateDoc, handleFirestoreError, OperationType } from "./lib/firebase";
+import { AvatarRenderer } from "./components/AvatarRenderer";
+import { CharacterFlow, PlayerCharacter } from "./components/CharacterFlow";
 
 interface Horse {
   id: string;
@@ -73,6 +77,29 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState(false);
+  const [selectedCharacter, setSelectedCharacter] = useState<PlayerCharacter | null>(null);
+
+  // Sync state with Firestore helper
+  const syncCharacterData = async (updatedPoints: number, updatedHistory: any[]) => {
+    if (!selectedCharacter) return;
+    const path = `players/${selectedCharacter.id}`;
+    try {
+       const docRef = doc(db, "players", selectedCharacter.id);
+       await updateDoc(docRef, {
+         points: updatedPoints,
+         history: updatedHistory
+       });
+       // Update local object to stay in sync
+       setSelectedCharacter(prev => prev ? { ...prev, points: updatedPoints, history: updatedHistory } : null);
+    } catch (err) {
+       console.error("Firestore sync error:", err);
+       try {
+         handleFirestoreError(err, OperationType.WRITE, path);
+       } catch (logErr) {
+         // Logged
+       }
+    }
+  };
 
   // Core Game State
   const [round, setRound] = useState(1);
@@ -184,7 +211,9 @@ export default function App() {
     if (totalBet <= 0) return;
 
     // Deduct bet points
-    setPoints(prev => prev - totalBet);
+    const nextPoints = points - totalBet;
+    setPoints(nextPoints);
+    syncCharacterData(nextPoints, history);
     setScreen("racing");
     setIsRacing(true);
     setRacingWinner(null);
@@ -313,20 +342,26 @@ export default function App() {
 
     const net = earnings - totalBet;
 
-    setPoints(prev => prev + earnings);
     setPayoutAmount(earnings);
     setNetGain(net);
 
-    // Save logs
-    const historyItem: HistoryItem = {
-      round,
-      winnerName: winner ? winner.name : "없음",
-      totalBet,
-      payout: earnings,
-      net: Math.abs(net),
-      isWin: net >= 0
-    };
-    setHistory(prev => [historyItem, ...prev]);
+    setPoints(prevPoints => {
+      const finalPoints = prevPoints + earnings;
+      setHistory(prevHistory => {
+        const historyItem: HistoryItem = {
+          round,
+          winnerName: winner ? winner.name : "없음",
+          totalBet,
+          payout: earnings,
+          net: Math.abs(net),
+          isWin: net >= 0
+        };
+        const finalHistory = [historyItem, ...prevHistory];
+        syncCharacterData(finalPoints, finalHistory);
+        return finalHistory;
+      });
+      return finalPoints;
+    });
 
     setShowResultModal(true);
   };
@@ -340,9 +375,16 @@ export default function App() {
 
     if (round >= 10) {
       setScreen("gameover");
+      if (selectedCharacter) {
+        setNickname(selectedCharacter.nickname);
+      }
     } else {
       setRound(prev => prev + 1);
-      setPoints(prev => prev + 2000); // 매 라운드 추가 자금 +2,000 pts (2k) 제공
+      setPoints(prev => {
+        const nextPoints = prev + 2000;
+        syncCharacterData(nextPoints, history);
+        return nextPoints;
+      });
       setScreen("lobby");
     }
     window.scrollTo(0, 0);
@@ -365,6 +407,7 @@ export default function App() {
     setRound(1);
     setPoints(10000);
     setHistory([]);
+    syncCharacterData(10000, []);
     setScreen("lobby");
     setNickname("");
     window.scrollTo(0, 0);
@@ -374,6 +417,7 @@ export default function App() {
     setRound(1);
     setPoints(10000);
     setHistory([]);
+    syncCharacterData(10000, []);
     setBets({
       maximus: 0, tyranno: 0, caesar: 0, samsung: 0, semicon: 0, antonius: 0, guan_yu: 0, transport: 0
     });
@@ -482,6 +526,17 @@ export default function App() {
         {/* LOGGED IN VIEWS */}
         {isLoggedIn && (
           <div className="w-full flex flex-col gap-6">
+            {!selectedCharacter ? (
+              <CharacterFlow 
+                onCharacterLogin={(character) => {
+                  setSelectedCharacter(character);
+                  setPoints(character.points);
+                  setHistory(character.history || []);
+                  synth.playVictoryFanfare();
+                }} 
+              />
+            ) : (
+              <>
             
             {/* LOBBY VIEW */}
             {screen === "lobby" && (
@@ -502,8 +557,30 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Active Character Profile */}
+                  <div className="flex items-center gap-3 bg-slate-950/70 border border-slate-800 px-4 py-2 rounded-xl">
+                    <AvatarRenderer avatar={selectedCharacter.avatar} sizeClass="w-9 h-9" />
+                    <div className="min-w-0">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">접속 마주</span>
+                      <span className="text-sm font-extrabold text-white truncate block max-w-[100px]" title={selectedCharacter.nickname}>
+                        {selectedCharacter.nickname}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Sound and guide controls */}
                   <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        setSelectedCharacter(null);
+                        setScreen("lobby");
+                      }} 
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all cursor-pointer text-xs font-bold flex items-center gap-1.5"
+                      title="캐릭터 변경"
+                    >
+                      <Users className="w-4 h-4" />
+                      캐릭터 변경
+                    </button>
                     <button 
                       onClick={() => setShowHelpModal(true)} 
                       className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all cursor-pointer"
@@ -669,11 +746,18 @@ export default function App() {
               <section className="w-full flex flex-col gap-4">
                 
                 {/* Compact Round Header */}
-                <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2.5 rounded-xl shadow-md">
-                  <span className="text-xs font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                    그랑프리 실시간 레이스
-                  </span>
+                <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl shadow-md">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                      그랑프리 실시간 레이스
+                    </span>
+                    <span className="hidden sm:inline-block text-[10px] text-slate-500">|</span>
+                    <div className="hidden sm:flex items-center gap-1.5 bg-slate-950/40 px-2 py-0.5 rounded-md border border-slate-800">
+                      <AvatarRenderer avatar={selectedCharacter.avatar} sizeClass="w-5 h-5" />
+                      <span className="text-[10px] text-slate-400 font-semibold">[{selectedCharacter.nickname}] 님 응원 중</span>
+                    </div>
+                  </div>
                   <div className="text-xs font-mono text-slate-400">
                     ROUND <span className="text-white font-bold">{round}/10</span>
                   </div>
@@ -809,6 +893,8 @@ export default function App() {
               </section>
             )}
 
+              </>
+            )}
           </div>
         )}
 

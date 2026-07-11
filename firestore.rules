@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Players collection rules (Unauthenticated access as player login is handled in-app via passwords)
+    match /players/{playerId} {
+      allow get, list: if true;
+      allow create, update: if request.resource.data.nickname is string 
+                            && request.resource.data.nickname.size() >= 2 
+                            && request.resource.data.nickname.size() <= 8
+                            && request.resource.data.points is number;
+      allow delete: if false;
+    }
+  }
+}

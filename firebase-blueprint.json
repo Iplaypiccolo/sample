@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Player": {
+      "title": "Player",
+      "description": "GP horse racing game character",
+      "type": "object",
+      "properties": {
+        "nickname": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8,
+          "description": "Unique nickname of the player"
+        },
+        "password": {
+          "type": "string",
+          "description": "Passcode to authenticate character"
+        },
+        "points": {
+          "type": "number",
+          "description": "Current points/assets"
+        },
+        "history": {
+          "type": "array",
+          "description": "Log of previous racing records"
+        },
+        "avatar": {
+          "type": "object",
+          "description": "Avatar configuration properties"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Date and time of character creation"
+        }
+      },
+      "required": ["nickname", "password", "points", "avatar"]
+    }
+  },
+  "firestore": {
+    "/players/{playerId}": {
+      "schema": "Player",
+      "description": "The collection of GP racing player characters"
+    }
+  }
+}
